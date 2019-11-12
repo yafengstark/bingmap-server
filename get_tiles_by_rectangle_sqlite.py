@@ -9,9 +9,11 @@ import QuadKey.quadkey as quadkey
 import shutil
 import secrets as secrets
 
+import sqlite_util as dbutil
+
 # 下载的最细层
-tileZoom = 6
-rootTileDir = "tiles_cache"
+tileZoom = 1
+rootTileDir = "tiles_db"
 
 lat_min = -90
 lat_max = 90
@@ -40,59 +42,6 @@ if (os.path.exists(bingTilesDir) == False):
     os.mkdir(bingTilesDir)
 
 
-
-def get_tiles(lat, lon):
-    """
-    下载该点之上的瓦片
-
-    :param lat:
-    :param lon:
-    :return:
-    """
-
-    """get pixel coordinates"""
-    tilePixel = quadkey.TileSystem.geo_to_pixel((lat, lon), tileZoom)
-
-    print(tilePixel)
-
-    pixel = tilePixel
-    geo = quadkey.TileSystem.pixel_to_geo(pixel, tileZoom)
-    # 计算四键
-    qk = quadkey.from_geo(geo, tileZoom)
-
-    # 四键
-    qkStr = str(qk)
-
-
-    #
-    qkArray = []
-    for index in range(tileZoom):
-        qkArray.append(qkStr[0:index + 1])
-
-    print(qkArray)
-    # 存放路径
-    for qk in qkArray:
-        # 下载影像
-        tileFileName = "%s/%s.jpg" % (bingTilesDir, qk)
-
-        if (os.path.exists(tileFileName)):
-            # already downloaded
-            ok = 1
-        else:
-            print("下载中", end='')
-
-            url = tileUrlTemplate.replace("{subdomain}", imageDomains[0])
-            url = url.replace("{quadkey}", qk)
-            url = "%s&key=%s" % (url, secrets.bingKey)
-
-            response = requests.get(url, stream=True)
-            print(response)
-
-            with open(tileFileName, 'wb') as out_file:
-                shutil.copyfileobj(response.raw, out_file)
-
-            del response
-            neededTile = True
 
 def get_tiles_by_pixel(tilePixel):
     """
@@ -125,11 +74,21 @@ def get_tiles_by_pixel(tilePixel):
     print(qkArray)
     # 存放路径
     for qk in qkArray:
-        # 下载影像
-        tileFileName = "%s/%s.jpg" % (bingTilesDir, qk)
+        # db位置
+        dbPath = "%s/%s.db" % (bingTilesDir, int(qk) % 199 )
+        print(dbPath)
 
-        if (os.path.exists(tileFileName)):
+        if (os.path.exists(dbPath) == False):
+            # os.mkdir(dbPath)
+            dbutil.create_db(dbPath)
+
+
+
+        # 下载影像
+
+        if (dbutil.is_exists(dbPath, qk)):
             # already downloaded
+            dbutil.save_images(dbPath, qk)
             ok = 1
         else:
             print("下载中", end='')
@@ -140,12 +99,10 @@ def get_tiles_by_pixel(tilePixel):
 
             response = requests.get(url, stream=True)
             print(response)
-
-            with open(tileFileName, 'wb') as out_file:
-                shutil.copyfileobj(response.raw, out_file)
+            dbutil.insert(dbPath, qk, response.content)
 
             del response
-            neededTile = True
+
 # 左上为原点
 tilePixelMax = quadkey.TileSystem.geo_to_pixel((lat_max, lon_max), tileZoom)
 tilePixelMin = quadkey.TileSystem.geo_to_pixel((lat_min, lon_min), tileZoom)
