@@ -1,18 +1,32 @@
 # -*- coding: utf-8 -*-
 """下载区域影像
 从第一层到指定层
+
+多线程版
+
 """
 
 import requests
+# python3的thread模块
+import _thread
+import random
+import time
+from random import random
 import os.path
 import QuadKey.quadkey as quadkey
 import shutil
 import secrets as secrets
 
-# 下载的最细层
-tileZoom = 6
-rootTileDir = "tiles_cache"
+import sqlite_util as dbutil
 
+
+# 下载的最细层
+tileZoom = 10
+rootTileDir = "tiles_db"
+
+# 分的db数量，采用质数
+
+db_num = 1511
 lat_min = -90
 lat_max = 90
 lon_min = -180
@@ -40,60 +54,6 @@ if (os.path.exists(bingTilesDir) == False):
     os.mkdir(bingTilesDir)
 
 
-
-def get_tiles(lat, lon):
-    """
-    下载该点之上的瓦片
-
-    :param lat:
-    :param lon:
-    :return:
-    """
-
-    """get pixel coordinates"""
-    tilePixel = quadkey.TileSystem.geo_to_pixel((lat, lon), tileZoom)
-
-    print(tilePixel)
-
-    pixel = tilePixel
-    geo = quadkey.TileSystem.pixel_to_geo(pixel, tileZoom)
-    # 计算四键
-    qk = quadkey.from_geo(geo, tileZoom)
-
-    # 四键
-    qkStr = str(qk)
-
-
-    #
-    qkArray = []
-    for index in range(tileZoom):
-        qkArray.append(qkStr[0:index + 1])
-
-    print(qkArray)
-    # 存放路径
-    for qk in qkArray:
-        # 下载影像
-        tileFileName = "%s/%s.jpg" % (bingTilesDir, qk)
-
-        if (os.path.exists(tileFileName)):
-            # already downloaded
-            ok = 1
-        else:
-            print("下载中", end='')
-
-            url = tileUrlTemplate.replace("{subdomain}", imageDomains[0])
-            url = url.replace("{quadkey}", qk)
-            url = "%s&key=%s" % (url, secrets.bingKey)
-
-            response = requests.get(url, stream=True)
-            print(response)
-
-            with open(tileFileName, 'wb') as out_file:
-                shutil.copyfileobj(response.raw, out_file)
-
-            del response
-            # 应该添加一个随机暂停
-            neededTile = True
 
 def get_tiles_by_pixel(tilePixel):
     """
@@ -126,11 +86,21 @@ def get_tiles_by_pixel(tilePixel):
     print(qkArray)
     # 存放路径
     for qk in qkArray:
-        # 下载影像
-        tileFileName = "%s/%s.jpg" % (bingTilesDir, qk)
+        # db位置
+        dbPath = "%s/%s.db" % (bingTilesDir, int(qk) % db_num )
+        print(dbPath)
 
-        if (os.path.exists(tileFileName)):
+        if (os.path.exists(dbPath) == False):
+            # os.mkdir(dbPath)
+            dbutil.create_db(dbPath)
+
+
+
+        # 下载影像
+
+        if (dbutil.is_exists(dbPath, qk)):
             # already downloaded
+            dbutil.save_images(dbPath, qk)
             ok = 1
         else:
             print("下载中", end='')
@@ -141,25 +111,36 @@ def get_tiles_by_pixel(tilePixel):
 
             response = requests.get(url, stream=True)
             print(response)
-
-            with open(tileFileName, 'wb') as out_file:
-                shutil.copyfileobj(response.raw, out_file)
+            dbutil.insert(dbPath, qk, response.content)
 
             del response
-            neededTile = True
+            # 强制睡一会，防止bing服务器限制
+            sleepTime = random() * 3
+            time.sleep(sleepTime)
+
 # 左上为原点
 tilePixelMax = quadkey.TileSystem.geo_to_pixel((lat_max, lon_max), tileZoom)
 tilePixelMin = quadkey.TileSystem.geo_to_pixel((lat_min, lon_min), tileZoom)
 print(tilePixelMax)
 print(tilePixelMin)
 
+tile_pixel_list = []
+
 for x in range(tilePixelMin[0], tilePixelMax[0], 256):
     for y in range(tilePixelMax[1], tilePixelMin[1], 246):
-        get_tiles_by_pixel((x, y))
+        tile_pixel_list.append((x, y))
 
-# get_tiles(lat_max, lon_max)
-# get_tiles(lat_max, lon_min)
-# get_tiles(lat_min, lon_max)
-# get_tiles(lat_min, lon_min)
+thread_pause = 30
+for i in range(len(tile_pixel_list)):
+    print("处理"+str(i))
+    _thread.start_new_thread(get_tiles_by_pixel,(tile_pixel_list[i],) )
+
+    if(i % thread_pause == (thread_pause-1)):
+        print("让正常运行的线程执行完，睡眠开始")
+        time.sleep(5000)
+        print("睡眠结束")
+
+# _thread.start_new_thread( get_tiles_by_pixel, ( ) )
+
 
 print('下载完毕')
