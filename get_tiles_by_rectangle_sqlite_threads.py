@@ -4,6 +4,8 @@
 
 多线程版
 
+存储到sqlite中
+
 """
 
 import requests
@@ -130,6 +132,7 @@ for x in range(tilePixelMin[0], tilePixelMax[0], 256):
     for y in range(tilePixelMax[1], tilePixelMin[1], 246):
         tile_pixel_list.append((x, y))
 
+# 取决与服务器的硬件性能
 thread_pause = 30
 for i in range(len(tile_pixel_list)):
     print("处理"+str(i))
@@ -137,7 +140,7 @@ for i in range(len(tile_pixel_list)):
 
     if(i % thread_pause == (thread_pause-1)):
         print("让正常运行的线程执行完，睡眠开始")
-        time.sleep(5000)
+        time.sleep(5)
         print("睡眠结束")
 
 # _thread.start_new_thread( get_tiles_by_pixel, ( ) )
